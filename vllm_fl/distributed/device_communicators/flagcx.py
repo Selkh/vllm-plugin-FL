@@ -128,7 +128,7 @@ class PyFlagcxCommunicator:
             self.all_reduce(data)
             stream.synchronize()
             del data
-            
+
     def all_reduce(self,
                    in_tensor: torch.Tensor,
                    out_tensor: torch.Tensor = None,
