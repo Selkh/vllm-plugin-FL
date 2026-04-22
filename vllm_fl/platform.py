@@ -40,6 +40,7 @@ _R = TypeVar("_R")
 dist_backend_dict = {
     "npu": "hccl",
     "cuda": "nccl",
+    "gcu": "eccl",
 }
 
 
@@ -70,6 +71,8 @@ class PlatformFL(Platform):
             return False
         if self.vendor_name == "musa":
             return True
+        if self.vendor_name == "gcu":
+            return True
         return self.device_type == "cuda"
 
     def is_cuda(self) -> bool:
@@ -77,6 +80,11 @@ class PlatformFL(Platform):
         if self.vendor_name == "musa":
             return True
         return self.device_type == "cuda" and self.vendor_name == "nvidia"
+
+    def is_gcu(self) -> bool:
+        if hasattr(torch, 'gcu') and torch.gcu.is_available():
+            return True
+        return False
 
     def is_musa(self) -> bool:
         if hasattr(torch, 'musa') and torch.musa.is_available():
@@ -119,7 +127,7 @@ class PlatformFL(Platform):
     ### TODO(lms): change pin_memory depend device
     @classmethod
     def is_pin_memory_available(cls):
-        if cls.device_type in ["cuda", "xpu", "npu", "musa"]:
+        if cls.device_type in ["cuda", "xpu", "npu", "musa", "gcu"]:
             return True
         return False
 
@@ -152,6 +160,9 @@ class PlatformFL(Platform):
         model_config = vllm_config.model_config
 
         parallel_config.worker_cls = "vllm_fl.worker.worker.WorkerFL"
+
+        if cls.vendor_name == "gcu":
+            parallel_config.disable_custom_all_reduce = True
 
         cache_config = vllm_config.cache_config
         if cache_config and cache_config.block_size is None:
@@ -302,7 +313,7 @@ class PlatformFL(Platform):
 
     @classmethod
     def support_static_graph_mode(cls) -> bool:
-        if cls.vendor_name in ["nvidia", "ascend", "metax"]:
+        if cls.vendor_name in ["nvidia", "ascend", "metax", "gcu"]:
             return True
         return False
 
@@ -350,9 +361,13 @@ class PlatformFL(Platform):
         if cls.device_name == "npu":
             import vllm_fl.dispatch.backends.vendor.ascend
 
+    @classmethod
     def supports_fp8(cls) -> bool:
         if cls.vendor_name == "nvidia":
             return True
+        if cls.vendor_name == "gcu":
+            cc = cls.get_device_capability()
+            return cc is not None and cc.major >= 4
         return False
 
     @classmethod
@@ -389,12 +404,17 @@ class PlatformFL(Platform):
     def num_compute_units(cls, device_id: int = 0) -> int:
         return cls.torch_device_fn.get_device_properties(device_id).multi_processor_count
 
-
     @classmethod
     def get_device_capability(cls, device_id: int = 0) -> DeviceCapability:
         # TODO(yxa): For NPU/Ascend devices, return None (no capability version like CUDA)
         if cls.device_type == "npu":
             return None
+        if cls.vendor_name == "gcu":
+            gcu = getattr(torch, "gcu", None)
+            if gcu is None:
+                return None
+            major, minor = gcu.get_device_capability(device_id)
+            return DeviceCapability(major=major, minor=minor)
         if cls.device_type == "musa":
             major, minor = torch.musa.get_device_capability(device_id)
             return DeviceCapability(major=major, minor=minor)

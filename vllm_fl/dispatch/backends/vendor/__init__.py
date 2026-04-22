@@ -7,6 +7,7 @@ This package contains vendor-specific backend implementations.
 
 Available vendor backends:
 - ascend: Huawei Ascend NPU backend
+- gcu: Enflame GCU (``torch.gcu`` / torch_gcu) backend
 
 This package intentionally avoids eager imports of vendor subpackages.
 Importing a specific backend such as ``vllm_fl.dispatch.backends.vendor.ascend``
